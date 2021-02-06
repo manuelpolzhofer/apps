@@ -46,39 +46,37 @@ Bounds
   ${orderMins[2]} <= tinRedeem  <= ${orderMaxs[2]}
   ${orderMins[3]} <= dropRedeem <= ${orderMaxs[3]}
 End`
-      return lp;
-  };
+      return lp
+    }
 
-    let isFeasible: boolean = false;
-    let solutionVector: BN[] = [];
-    const BN0 = new BN(0);
-    const USE_LINEAR_WEIGHTS = false;
+    let isFeasible: boolean = false
+    let solutionVector: BN[] = []
+    const BN0 = new BN(0)
+    const USE_LINEAR_WEIGHTS = false
+    const orderMaxs = [orders.tinInvest, orders.dropInvest, orders.tinRedeem, orders.dropRedeem]
+    const orderMins = [BN0, BN0, BN0, BN0]
     if (USE_LINEAR_WEIGHTS) {
-        const orderMaxs = [orders.tinInvest, orders.dropInvest, orders.tinRedeem, orders.dropRedeem];
-        const lp = createProblem(varWeights, [BN0, BN0, BN0, BN0], orderMaxs);
-        const output = clp.solve(lp, 0)
-        solutionVector = output.solution.map((x) => new BN(clp.bnRound(x)));
-        isFeasible = output.infeasibilityRay.length == 0 && output.integerSolution;
+      const lp = createProblem(varWeights, orderMins, orderMaxs)
+      const output = clp.solve(lp, 0)
+      solutionVector = output.solution.map((x) => new BN(clp.bnRound(x)))
+      isFeasible = output.infeasibilityRay.length == 0 && output.integerSolution
     } else {
-        const orderMins = [BN0, BN0, BN0, BN0];
-        const orderMaxs = [orders.tinInvest, orders.dropInvest, orders.tinRedeem, orders.dropRedeem];
-        const priorityIndices = [0, 1, 2, 3];
-        priorityIndices.sort((a, b) => varWeights[a] > varWeights[b] ? -1 : varWeights[a] < varWeights[b] ? 1 : 0);
-        const BN1 = new BN(1);
-        const priorityWeight = new BN('10000000000');
-        for (const pI of priorityIndices) {
-            const weights = [BN1, BN1, BN1, BN1];
-            weights[pI] = priorityWeight;
-            const lp = createProblem(weights, orderMins, orderMaxs);
-            const output = clp.solve(lp, 0);
-            isFeasible = output.infeasibilityRay.length == 0 && output.integerSolution;
-            if (!isFeasible)
-                break;
-            const oP = new BN(clp.bnRound(output.solution[pI]));
-            orderMins[pI] = oP;
-            orderMaxs[pI] = oP;
-        }
-        solutionVector = orderMaxs;
+      const priorityIndices = [0, 1, 2, 3]
+      priorityIndices.sort((a, b) => (varWeights[a] > varWeights[b] ? -1 : varWeights[a] < varWeights[b] ? 1 : 0))
+      const BN1 = new BN(1)
+      const priorityWeight = new BN(10000000000)
+      for (const pI of priorityIndices) {
+        const weights = [BN1, BN1, BN1, BN1]
+        weights[pI] = priorityWeight
+        const lp = createProblem(weights, orderMins, orderMaxs)
+        const output = clp.solve(lp, 0)
+        isFeasible = output.infeasibilityRay.length == 0 && output.integerSolution
+        if (!isFeasible) break
+        const oP = new BN(clp.bnRound(output.solution[pI]))
+        orderMins[pI] = oP
+        orderMaxs[pI] = oP
+      }
+      solutionVector = orderMaxs
     }
 
     if (!isFeasible) {
