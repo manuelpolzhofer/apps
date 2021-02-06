@@ -28,29 +28,58 @@ export const calculateOptimalSolution = async (
       parseFloat(weights.tinRedeem.toString()),
       parseFloat(weights.dropRedeem.toString()),
     ]
+
     const minTINRatioLbCoeffs = [state.maxDropRatio, minTinRatio.neg(), state.maxDropRatio.neg(), minTinRatio]
     const maxTINRatioLbCoeffs = [state.minDropRatio.neg(), maxTinRatio, state.minDropRatio, maxTinRatio.neg()]
 
-    const lp = `
-      Maximize
-        ${linearExpression(varWeights)}
-      Subject To
-        reserve: ${linearExpression([1, 1, -1, -1])} >= ${state.reserve.neg()}
-        maxReserve: ${linearExpression([1, 1, -1, -1])} <= ${state.maxReserve.sub(state.reserve)}
-        minTINRatioLb: ${linearExpression(minTINRatioLbCoeffs)} >= ${minTINRatioLb}
-        maxTINRatioLb: ${linearExpression(maxTINRatioLbCoeffs)} >= ${maxTINRatioLb}
-      Bounds
-        0 <= tinInvest  <= ${orders.tinInvest}
-        0 <= dropInvest <= ${orders.dropInvest}
-        0 <= tinRedeem  <= ${orders.tinRedeem}
-        0 <= dropRedeem <= ${orders.dropRedeem}
-      End
-    `
+    const createProblem = (varWeights: (BN | number)[], orderMins: BN[], orderMaxs: BN[]) => {
+      const lp = `Maximize
+  obj: ${linearExpression(varWeights)}
+Subject To
+  reserve: ${linearExpression([1, 1, -1, -1])} >= ${state.reserve.neg()}
+  maxReserve: ${linearExpression([1, 1, -1, -1])} <= ${state.maxReserve.sub(state.reserve)}
+  minTINRatioLb: ${linearExpression(minTINRatioLbCoeffs)} >= ${minTINRatioLb}
+  maxTINRatioLb: ${linearExpression(maxTINRatioLbCoeffs)} >= ${maxTINRatioLb}
+Bounds
+  ${orderMins[0]} <= tinInvest  <= ${orderMaxs[0]}
+  ${orderMins[1]} <= dropInvest <= ${orderMaxs[1]}
+  ${orderMins[2]} <= tinRedeem  <= ${orderMaxs[2]}
+  ${orderMins[3]} <= dropRedeem <= ${orderMaxs[3]}
+End`
+      return lp;
+  };
 
-    const output = (clp as any).solve(lp, 0)
-
-    const solutionVector = output.solution.map((x: string) => new BN(clp.bnRound(x)))
-    const isFeasible = output.infeasibilityRay.length === 0 && output.integerSolution
+    let isFeasible: boolean = false;
+    let solutionVector: BN[] = [];
+    const BN0 = new BN(0);
+    const USE_LINEAR_WEIGHTS = false;
+    if (USE_LINEAR_WEIGHTS) {
+        const orderMaxs = [orders.tinInvest, orders.dropInvest, orders.tinRedeem, orders.dropRedeem];
+        const lp = createProblem(varWeights, [BN0, BN0, BN0, BN0], orderMaxs);
+        const output = clp.solve(lp, 0)
+        solutionVector = output.solution.map((x) => new BN(clp.bnRound(x)));
+        isFeasible = output.infeasibilityRay.length == 0 && output.integerSolution;
+    } else {
+        const orderMins = [BN0, BN0, BN0, BN0];
+        const orderMaxs = [orders.tinInvest, orders.dropInvest, orders.tinRedeem, orders.dropRedeem];
+        const priorityIndices = [0, 1, 2, 3];
+        priorityIndices.sort((a, b) => varWeights[a] > varWeights[b] ? -1 : varWeights[a] < varWeights[b] ? 1 : 0);
+        const BN1 = new BN(1);
+        const priorityWeight = new BN('10000000000');
+        for (const pI of priorityIndices) {
+            const weights = [BN1, BN1, BN1, BN1];
+            weights[pI] = priorityWeight;
+            const lp = createProblem(weights, orderMins, orderMaxs);
+            const output = clp.solve(lp, 0);
+            isFeasible = isFeasible || output.infeasibilityRay.length == 0 && output.integerSolution;
+            if (!isFeasible)
+                break;
+            const oP = new BN(clp.bnRound(output.solution[pI]));
+            orderMins[pI] = oP;
+            orderMaxs[pI] = oP;
+        }
+        solutionVector = orderMaxs;
+    }
 
     if (!isFeasible) {
       // If it's not possible to go into a healthy state, calculate the best possible solution to break the constraints less
