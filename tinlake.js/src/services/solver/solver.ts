@@ -71,7 +71,7 @@ End`
             weights[pI] = priorityWeight;
             const lp = createProblem(weights, orderMins, orderMaxs);
             const output = clp.solve(lp, 0);
-            isFeasible = isFeasible || output.infeasibilityRay.length == 0 && output.integerSolution;
+            isFeasible = output.infeasibilityRay.length == 0 && output.integerSolution;
             if (!isFeasible)
                 break;
             const oP = new BN(clp.bnRound(output.solution[pI]));
